@@ -21,10 +21,12 @@ app.post("/upload", async (req, res) => {
     console.log("Incoming upload:", { fileName, fileUrl });
 
     if (!fileUrl) {
-      return res.status(400).json({ error: "Missing fileUrl" });
+      return res.status(400).json({
+        success: false,
+        error: "Missing fileUrl"
+      });
     }
 
-    // Only test image receipts for now
     const lower = (fileName || "").toLowerCase();
     const isImage =
       lower.endsWith(".jpg") ||
@@ -36,11 +38,11 @@ app.post("/upload", async (req, res) => {
     if (!isImage) {
       return res.status(400).json({
         success: false,
-        error: "This extraction step currently supports image receipts only. PDF/document uploads need a separate path."
+        error: "Only image receipts are supported right now"
       });
     }
 
-    const response = await client.responses.create({
+    const openaiResponse = await client.responses.create({
       model: "gpt-4.1-mini",
       input: [
         {
@@ -135,31 +137,40 @@ COGS subcategories:
       }
     });
 
-    console.log("Raw OpenAI response:", JSON.stringify(response, null, 2));
+    console.log("OpenAI output_text:", openaiResponse.output_text);
 
-    const parsedText = response.output_text;
-    if (!parsedText) {
-      throw new Error("No output_text returned from OpenAI");
+    if (!openaiResponse.output_text) {
+      return res.status(500).json({
+        success: false,
+        error: "OpenAI returned no output_text"
+      });
     }
 
-    const parsed = JSON.parse(parsedText);
+    let parsed;
+    try {
+      parsed = JSON.parse(openaiResponse.output_text);
+    } catch (parseError) {
+      console.error("JSON parse failed:", parseError);
+      return res.status(500).json({
+        success: false,
+        error: "OpenAI returned invalid JSON"
+      });
+    }
 
     console.log("Parsed receipt:", parsed);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       fileName,
       extracted: parsed
     });
-  } catch (error) {
-    console.error("Extraction failed FULL ERROR:", error);
-    console.error("Extraction failed MESSAGE:", error?.message);
-    console.error("Extraction failed STATUS:", error?.status);
-    console.error("Extraction failed RESPONSE:", error?.response?.data || error?.error || null);
 
-    res.status(500).json({
+  } catch (error) {
+    console.error("RAILWAY EXTRACTION ERROR FULL:", error);
+
+    return res.status(500).json({
       success: false,
-      error: error?.message || "Unknown extraction error"
+      error: error?.message || "Railway extraction failed"
     });
   }
 });
