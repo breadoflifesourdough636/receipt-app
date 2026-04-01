@@ -63,7 +63,40 @@ function buildSchema() {
   };
 }
 
-function buildPrompt() {
+function buildPrompt(isPdf) {
+  if (isPdf) {
+    return `This is a PDF receipt or invoice.
+
+Read the entire PDF carefully and extract receipt data into structured JSON.
+Use the PDF text and visual layout together.
+If the PDF has multiple pages, use the page that contains the actual receipt totals and line items.
+
+Rules:
+- Return best-effort values.
+- If something is unclear, use null.
+- If line items are missing, return an empty array.
+- Do not invent values.
+- If you can identify the merchant but not line items, still return the merchant and totals.
+- Notes should briefly explain anything unusual, like "multi-page PDF", "scanned image PDF", or "totals unclear".
+
+Top-level categories:
+- Advertising & Marketing
+- Office Expenses & Supplies
+- Rent and Utilities
+- Payroll and Employee Benefits
+- Professional Services
+- Travel and Meals
+- Vehicle Expenses
+- Taxes and Licenses
+- Insurance
+- Cost of Goods Sold (COGS)
+
+COGS subcategories:
+- Ingredients
+- Packaging
+- Baking Supplies`;
+  }
+
   return `Extract this receipt into structured JSON.
 Return best-effort values.
 If something is unclear, use null.
@@ -119,8 +152,11 @@ app.post("/upload", async (req, res) => {
     }
 
     let content;
+    let model = "gpt-4.1-mini";
 
     if (isPdf) {
+      model = "gpt-4.1";
+
       const pdfResponse = await fetch(fileUrl);
       if (!pdfResponse.ok) {
         throw new Error(`Failed to download PDF: ${pdfResponse.status}`);
@@ -131,20 +167,20 @@ app.post("/upload", async (req, res) => {
 
       content = [
         {
+          type: "input_text",
+          text: buildPrompt(true)
+        },
+        {
           type: "input_file",
           filename: fileName || "receipt.pdf",
           file_data: `data:application/pdf;base64,${base64}`
-        },
-        {
-          type: "input_text",
-          text: buildPrompt()
         }
       ];
     } else {
       content = [
         {
           type: "input_text",
-          text: buildPrompt()
+          text: buildPrompt(false)
         },
         {
           type: "input_image",
@@ -154,7 +190,7 @@ app.post("/upload", async (req, res) => {
     }
 
     const openaiResponse = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model,
       input: [
         {
           role: "user",
@@ -169,6 +205,9 @@ app.post("/upload", async (req, res) => {
         }
       }
     });
+
+    console.log("UPLOAD TYPE:", isPdf ? "pdf" : "image");
+    console.log("RAW OUTPUT TEXT:", openaiResponse.output_text);
 
     if (!openaiResponse.output_text) {
       return res.status(500).json({
