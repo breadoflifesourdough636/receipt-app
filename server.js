@@ -1,15 +1,18 @@
 const express = require("express");
+const cors = require("cors");
 
 const app = express();
+
+app.use(cors());
 app.use(express.json());
 
 app.post("/upload", (req, res) => {
   console.log("Received file:", req.body);
-  res.json({ success: true });
+  res.status(200).json({ success: true, received: req.body });
 });
 
 app.get("/", (req, res) => {
-  res.send("Receipt app is running");
+  res.status(200).send("Receipt app is running");
 });
 
 const PORT = process.env.PORT || 3000;
