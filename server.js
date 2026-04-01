@@ -18,8 +18,26 @@ app.post("/upload", async (req, res) => {
   try {
     const { fileUrl, fileName } = req.body;
 
+    console.log("Incoming upload:", { fileName, fileUrl });
+
     if (!fileUrl) {
       return res.status(400).json({ error: "Missing fileUrl" });
+    }
+
+    // Only test image receipts for now
+    const lower = (fileName || "").toLowerCase();
+    const isImage =
+      lower.endsWith(".jpg") ||
+      lower.endsWith(".jpeg") ||
+      lower.endsWith(".png") ||
+      lower.endsWith(".webp") ||
+      lower.endsWith(".heic");
+
+    if (!isImage) {
+      return res.status(400).json({
+        success: false,
+        error: "This extraction step currently supports image receipts only. PDF/document uploads need a separate path."
+      });
     }
 
     const response = await client.responses.create({
@@ -30,13 +48,12 @@ app.post("/upload", async (req, res) => {
           content: [
             {
               type: "input_text",
-              text:
-                `Extract this receipt into structured JSON.
+              text: `Extract this receipt into structured JSON.
 Return best-effort values.
 If something is unclear, use null.
 If line items are missing, return an empty array.
 
-Also suggest one of these top-level categories:
+Top-level categories:
 - Advertising & Marketing
 - Office Expenses & Supplies
 - Rent and Utilities
@@ -48,7 +65,7 @@ Also suggest one of these top-level categories:
 - Insurance
 - Cost of Goods Sold (COGS)
 
-For COGS subcategory, use one of:
+COGS subcategories:
 - Ingredients
 - Packaging
 - Baking Supplies`
@@ -118,9 +135,15 @@ For COGS subcategory, use one of:
       }
     });
 
-    const parsed = JSON.parse(response.output_text);
+    console.log("Raw OpenAI response:", JSON.stringify(response, null, 2));
 
-    console.log("Received file:", { fileName, fileUrl });
+    const parsedText = response.output_text;
+    if (!parsedText) {
+      throw new Error("No output_text returned from OpenAI");
+    }
+
+    const parsed = JSON.parse(parsedText);
+
     console.log("Parsed receipt:", parsed);
 
     res.status(200).json({
@@ -129,10 +152,14 @@ For COGS subcategory, use one of:
       extracted: parsed
     });
   } catch (error) {
-    console.error("Extraction failed:", error);
+    console.error("Extraction failed FULL ERROR:", error);
+    console.error("Extraction failed MESSAGE:", error?.message);
+    console.error("Extraction failed STATUS:", error?.status);
+    console.error("Extraction failed RESPONSE:", error?.response?.data || error?.error || null);
+
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error?.message || "Unknown extraction error"
     });
   }
 });
